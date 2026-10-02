@@ -15,23 +15,47 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Build APK and AAB
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Locate Project and Build
         run: |
-          # If files are inside an EventFlow subfolder, move into it
-          if [ -d "EventFlow" ]; then
-            cd EventFlow
+          # 1. Automatically extract any uploaded zip files
+          shopt -s nullglob
+          for f in *.zip */*.zip **/*.zip; do
+            if [ -f "$f" ]; then
+              echo "Extracting archive: $f"
+              unzip -o "$f" || true
+            fi
+          done
+
+          # 2. Locate the folder containing settings.gradle or build.gradle
+          PROJECT_FILE=$(find . -name "settings.gradle*" | head -n 1)
+          if [ -z "$PROJECT_FILE" ]; then
+            PROJECT_FILE=$(find . -name "build.gradle*" | head -n 1)
           fi
 
-          # If gradlew was not uploaded, generate it automatically
-          if [ ! -f "gradlew" ]; then
-            echo "gradlew not found, generating wrapper..."
-            gradle wrapper
+          if [ -n "$PROJECT_FILE" ]; then
+            PROJECT_DIR=$(dirname "$PROJECT_FILE")
+            echo "Found Android project at: $PROJECT_DIR"
+            cd "$PROJECT_DIR"
+          else
+            echo "ERROR: Could not find settings.gradle.kts or build.gradle.kts."
+            echo "Repository file structure:"
+            find . -maxdepth 3
+            exit 1
           fi
 
-          chmod +x gradlew
-          ./gradlew bundleDebug assembleDebug --stacktrace
+          # 3. Build AAB and APK
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew bundleDebug assembleDebug --stacktrace
+          else
+            gradle bundleDebug assembleDebug --stacktrace
+          fi
 
       - name: Upload AAB Bundle
         uses: actions/upload-artifact@v4
@@ -44,5 +68,7 @@ jobs:
         with:
           name: EventFlow-App-APK
           path: "**/build/outputs/apk/**/*.apk"
+
+          
           
           
